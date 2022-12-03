@@ -1,0 +1,31 @@
+[package]
+name = "ledger-cosmos"
+description = "An interface to allow easily interacting with the Ledger Cosmos app"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Eric Woolsey <ewoolsey@ualberta.ca>"]
+homepage = "https://github.com/ewoolsey/ledger-bluetooth"
+repository = "https://github.com/ewoolsey/ledger-bluetooth"
+readme = "README.md"
+categories  = ["authentication", "cryptography"]
+keywords = ["ledger", "nano", "cosmos", "apdu", "bluetooth"]
+edition = "2021"
+
+[dependencies]
+libc = "0.2"
+byteorder = "1.4"
+thiserror = "1.0"
+log = { version = "0.4", features = ["std"] }
+
+btleplug = "0.10"
+tokio = { version = "1", features = ["macros"] }
+futures = "0.3"
+ledger-bluetooth = "0.2.0"
+ledger-transport = "0.10"
+cosmrs = "0.11.0"
+sha256 = "1.1"
+
+[dev-dependencies]
+ledger-zondax-generic = "0.10"
+serial_test = "0.7.0"
+env_logger = "0.9"

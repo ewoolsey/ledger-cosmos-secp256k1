@@ -1,5 +1,5 @@
 [package]
-name = "ledger-cosmos"
+name = "ledger-cosmos-secp256k1"
 description = "An interface to allow easily interacting with the Ledger Cosmos app"
 version = "0.1.0"
 license = "Apache-2.0"

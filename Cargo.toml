@@ -1,7 +1,7 @@
 [package]
 name = "ledger-cosmos-secp256k1"
 description = "An interface to allow easily interacting with the Ledger Cosmos app"
-version = "0.1.0"
+version = "0.2.0"
 license = "Apache-2.0"
 authors = ["Eric Woolsey <ewoolsey@ualberta.ca>"]
 homepage = "https://github.com/ewoolsey/ledger-bluetooth"

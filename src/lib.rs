@@ -1,8 +1,5 @@
 use byteorder::{LittleEndian, WriteBytesExt};
-use cosmrs::{
-    tendermint::{self, PublicKey},
-    tx::Raw,
-};
+use cosmrs::{tendermint::PublicKey, tx::Raw};
 use errors::LedgerCosmosError;
 
 use ledger_transport::{async_trait, APDUCommand, APDUErrorCode, Exchange};
@@ -205,7 +202,7 @@ where
 }
 
 fn decompress_pk(compressed_pk: &[u8]) -> Result<PublicKey, LedgerCosmosError<()>> {
-    Ok(tendermint::PublicKey::from_raw_secp256k1(compressed_pk).expect("invalid secp256k1 key"))
+    Ok(PublicKey::from_raw_secp256k1(compressed_pk).expect("invalid secp256k1 key"))
 }
 
 #[cfg(test)]

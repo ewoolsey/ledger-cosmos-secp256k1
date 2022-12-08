@@ -1,11 +1,11 @@
 [package]
 name = "ledger-cosmos-secp256k1"
 description = "An interface to allow easily interacting with the Ledger Cosmos app"
-version = "0.3.0"
+version = "0.1.0"
 license = "Apache-2.0"
 authors = ["Eric Woolsey <ewoolsey@ualberta.ca>"]
-homepage = "https://github.com/ewoolsey/ledger-bluetooth"
-repository = "https://github.com/ewoolsey/ledger-bluetooth"
+homepage = "https://github.com/ewoolsey/ledger-cosmos-secp256k1"
+repository = "https://github.com/ewoolsey/ledger-cosmos-secp256k1"
 readme = "README.md"
 categories  = ["authentication", "cryptography"]
 keywords = ["ledger", "nano", "cosmos", "apdu", "bluetooth"]
@@ -14,14 +14,12 @@ edition = "2021"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-serde_with = "2"
 libc = "0.2"
 byteorder = "1.4"
 thiserror = "1.0"
 log = { version = "0.4", features = ["std"] }
 ledger-transport = "0.10"
 ledger-zondax-generic = "0.10"
-# cosmrs = { version = "0.9.0", features = ["cosmwasm"] }
 k256 = "0.11.6"
 cosmrs = { git = "https://github.com/ewoolsey/cosmos-rust/", features = ["cosmwasm"] }
 

@@ -24,15 +24,9 @@ pub enum LedgerCosmosError<E> {
     /// Communication error
     #[error("Ledger device: unknown apdu error. code `{0}`")]
     UnknownApduCode(u16),
-    /// Communication error
-    #[error("Ledger device: could not deserialize public key")]
-    InvalidPublicKey,
-    /// Communication error
+    /// Address error
     #[error("Ledger device: could not deserialize address")]
     InvalidAddress,
-    /// Communication error
-    #[error("Ledger device: Error, no messages provided")]
-    NoMessages,
     /// Error during apdu exchange
     #[error("Ledger device: Exchange error `{0}`")]
     Exchange(#[from] E),

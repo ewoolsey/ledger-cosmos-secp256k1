@@ -1,13 +1,12 @@
+#![allow(clippy::too_many_arguments)]
 use byteorder::{LittleEndian, WriteBytesExt};
-use cosmrs::{
-    tendermint::PublicKey,
-    tx::{Msg, Raw},
-};
+use cosmrs::{tendermint::PublicKey, tx::Msg};
 use errors::LedgerCosmosError;
 
 use k256::ecdsa::Signature;
-use ledger_transport::{async_trait, APDUCommand, APDUErrorCode, Exchange};
+use ledger_transport::{APDUCommand, APDUErrorCode, Exchange};
 use ledger_zondax_generic::{App, AppExt};
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -99,42 +98,16 @@ pub struct LedgerPayload {
     pub sequence: String,
 }
 
-#[async_trait]
-pub trait CosmosAppTrait {
-    type Error;
-    async fn get_cosmos_app_version(
-        &self,
-    ) -> Result<CosmosAppVersion, LedgerCosmosError<Self::Error>>;
-    async fn get_addr_secp256k1(
-        &self,
-        derivation_path: [u32; 5],
-        hrp: &str,
-        display_on_ledger: bool,
-    ) -> Result<Secp256k1Response, LedgerCosmosError<Self::Error>>;
-    async fn sign_secp256k1(
-        &self,
-        path: [u32; 5],
-        messages: Vec<Vec<u8>>,
-    ) -> Result<Vec<Raw>, LedgerCosmosError<Self::Error>>;
-    async fn sign(
-        &self,
-        derivation_path: [u32; 5],
-        fee: Fee,
-        chain_id: String,
-        memo: String,
-        account_number: u64,
-        sequence: u64,
-        messages: Vec<Value>,
-    ) -> Result<Vec<Raw>, LedgerCosmosError<Self::Error>>;
-}
-
-#[async_trait]
-impl<T> CosmosAppTrait for T
+impl<T> CosmosApp<T>
 where
     T: Exchange + Send + Sync,
+    T::Error: std::error::Error,
 {
-    type Error = T::Error;
-    async fn get_cosmos_app_version(
+    pub fn new(transport: T) -> Self {
+        CosmosApp { transport }
+    }
+
+    pub async fn get_cosmos_app_version(
         &self,
     ) -> Result<CosmosAppVersion, LedgerCosmosError<T::Error>> {
         let command = APDUCommand {
@@ -144,7 +117,7 @@ where
             p2: 0x00,
             data: vec![],
         };
-        let answer = self.exchange(&command).await?;
+        let answer = self.transport.exchange(&command).await?;
         let error_code = answer.error_code();
         match error_code {
             Ok(code) => match code {
@@ -164,7 +137,7 @@ where
         }
     }
 
-    async fn get_addr_secp256k1(
+    pub async fn get_addr_secp256k1(
         &self,
         path: [u32; 5],
         hrp: &str,
@@ -191,7 +164,7 @@ where
             p2: 0x00,
             data: get_addr_payload,
         };
-        let answer = self.exchange(&command).await?;
+        let answer = self.transport.exchange(&command).await?;
         let error_code = answer.error_code();
         match error_code {
             Ok(code) => match code {
@@ -209,14 +182,14 @@ where
         }
     }
 
-    async fn sign_secp256k1(
+    pub async fn sign_secp256k1(
         &self,
         path: [u32; 5],
-        messages: Vec<Vec<u8>>,
-    ) -> Result<Vec<Raw>, LedgerCosmosError<T::Error>> {
-        if messages.is_empty() {
-            return Err(LedgerCosmosError::NoMessages);
-        }
+        message: Vec<u8>,
+    ) -> Result<Signature, LedgerCosmosError<T::Error>> {
+        // if messages.is_empty() {
+        //     return Err(LedgerCosmosError::NoMessages);
+        // }
         let mut init_payload: Vec<u8> = Vec::new();
         init_payload
             .write_u32::<LittleEndian>(path[0] + 0x80000000)
@@ -236,57 +209,28 @@ where
             p2: 0x00,
             data: init_payload,
         };
-        println!("init command: {:#?}", init_command);
-        let init_answer = self.exchange(&init_command).await?;
-        let init_error_code = init_answer.error_code();
-        match init_error_code {
+        info!("init command: {:#?}", init_command);
+        let res = Self::send_chunks::<Vec<u8>>(&self.transport, init_command, &message).await;
+        let sign_answer = res.unwrap();
+        let sign_error_code = sign_answer.error_code();
+        match sign_error_code {
             Ok(code) => match code {
-                APDUErrorCode::NoError => {}
-                _ => return Err(LedgerCosmosError::Apdu(code.description())),
-            },
-            Err(code) => return Err(LedgerCosmosError::UnknownApduCode(code)),
-        }
-        let messages_len = messages.len();
-        let signed_messages = Vec::new();
-        for (i, message) in messages.into_iter().enumerate() {
-            let p1 = if i + 1 == messages_len {
-                0x02 // last message
-            } else {
-                0x01 // add message
-            };
-            let sign_command = APDUCommand {
-                cla: COSMOS_CLA,
-                ins: SIGN_SECP256K1_INS,
-                p1,
-                p2: 0x00,
-                data: message,
-            };
-            println!("next command: {:#?}", sign_command);
-            let sign_answer = self.exchange(&sign_command).await?;
-            let sign_error_code = sign_answer.error_code();
-            match sign_error_code {
-                Ok(code) => match code {
-                    APDUErrorCode::NoError => {
-                        println!("code: {:?}", code);
-                        let data = sign_answer.apdu_data().to_vec();
-                        println!("data: {:?}", data);
-                        let signature = Signature::from_der(data.as_slice()).unwrap();
-                        dbg!(signature);
+                APDUErrorCode::NoError => {
+                    info!("code: {:?}", code);
+                    let data = sign_answer.apdu_data().to_vec();
+                    info!("data: {:?}", data);
+                    let signature = Signature::from_der(data.as_slice()).unwrap();
+                    dbg!(signature);
 
-                        //Signature::try_from(data).unwrap(); //recover_verifying_key(data);
-                        // let raw = Raw::from_bytes(&data).unwrap();
-                        println!("herre");
-                        // signed_messages.push(raw);
-                    }
-                    _ => return Err(LedgerCosmosError::Apdu(code.description())),
-                },
-                Err(code) => return Err(LedgerCosmosError::UnknownApduCode(code)),
-            }
+                    Ok(signature)
+                }
+                _ => Err(LedgerCosmosError::Apdu(code.description())),
+            },
+            Err(code) => Err(LedgerCosmosError::UnknownApduCode(code)),
         }
-        Ok(signed_messages)
     }
 
-    async fn sign(
+    pub async fn sign(
         &self,
         derivation_path: [u32; 5],
         fee: Fee,
@@ -295,7 +239,7 @@ where
         account_number: u64,
         sequence: u64,
         msgs: Vec<Value>,
-    ) -> Result<Vec<Raw>, LedgerCosmosError<T::Error>> {
+    ) -> Result<Signature, LedgerCosmosError<T::Error>> {
         let payload = LedgerPayload {
             account_number: account_number.to_string(),
             chain_id,
@@ -308,13 +252,12 @@ where
         let payload_val = serde_json::to_value(&payload).unwrap();
         let payload_val_sorted = crate::sort_object_keys(payload_val.clone());
         let bytes = serde_json::to_vec(&payload_val_sorted).unwrap();
-        println!(
+        info!(
             "payload: {}",
             serde_json::to_string_pretty(&payload_val_sorted).unwrap()
         );
-        let res = self.sign_secp256k1(derivation_path, vec![bytes]).await?;
-        println!("res: {:?}", res);
-
+        let res = self.sign_secp256k1(derivation_path, bytes).await?;
+        info!("res: {:?}", res);
         Ok(res)
     }
 }
@@ -349,16 +292,14 @@ mod tests {
 
     use btleplug::platform;
 
-    use cosmrs::{
-        cosmwasm::{MsgExecuteContract, MsgStoreCode},
-        AccountId,
-    };
+    use cosmrs::{cosmwasm::MsgExecuteContract, AccountId};
     use ledger_bluetooth::TransportNativeBle;
     use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
-    use serde_json::json;
+
+    use log::info;
     use serial_test::serial;
 
-    use crate::{Coin, CosmosApp, CosmosAppTrait, Fee, IntoAnyJson, LedgerPayload};
+    use crate::{Coin, CosmosApp, Fee, IntoAnyJson};
 
     #[tokio::test]
     #[serial]
@@ -369,97 +310,16 @@ mod tests {
             .unwrap()
             .pop()
             .unwrap();
+        let app = CosmosApp::new(ledger);
         let path = [44, 118, 0, 0, 0];
         let hrp = "cosmos";
         let display_on_ledger = true;
-        let res = ledger
+        let res = app
             .get_addr_secp256k1(path, hrp, display_on_ledger)
             .await
             .unwrap();
-        println!("public key: {:?}", res.public_key);
-        println!("addr: {:?}", res.addr);
-    }
-
-    #[tokio::test]
-    // #[serial]
-    async fn test_sign_secp256k1() {
-        let api = HidApi::new().unwrap();
-        let device = TransportNativeHID::list_ledgers(&api).next().unwrap();
-        let ledger = TransportNativeHID::open_device(&api, device).unwrap();
-        let path = [44, 118, 0, 0, 0];
-
-        // let manager = platform::Manager::new().await.unwrap();
-        // let ledger = TransportNativeBle::new(&manager)
-        //     .await
-        //     .unwrap()
-        //     .pop()
-        //     .unwrap();
-
-        let test_msg = json!({
-            "m2": "z2"
-        });
-
-        // let test_payload = json!({
-        //     "account_number": "V1",
-        //     "chain_id": "V2",
-        //     "fee": {
-        //         "amount": [{
-        //             "amount": "b",
-        //             "denom": "d"
-        //         }],
-        //         "gas": "V3"
-        //     },
-        //     "memo": "V4",
-        //     "msgs": [
-        //         {
-        //             "type": "/cosmwasm.wasm.v1.MsgStoreCode",
-        //             "value": "yo dawg",
-        //         }
-        //     ],
-        //     "sequence": "V5"
-        // });
-
-        // let msg = MsgStoreCode {
-        //     sender: "cosmos1qyqsyqcyq5rqwzqfpg9scrgjl03hn0y3v9m0ey".into(),
-        //     wasm_byte_code: vec![3u8, 6u8],
-        //     instantiate_permission: None,
-        // };
-
-        let fee = Fee {
-            amount: vec![Coin {
-                denom: "uatom".into(),
-                amount: "45".into(),
-            }],
-            gas: "4000".to_string(),
-        };
-
-        let payload = LedgerPayload {
-            account_number: "123".to_string(),
-            chain_id: "oasis-1".to_string(),
-            fee,
-            memo: "hello".to_string(),
-            //msgs: vec![msg.to_any().unwrap().into()],
-            msgs: vec![test_msg.clone(), test_msg],
-            sequence: "500".into(),
-        };
-
-        let payload_val = serde_json::to_value(&payload).unwrap();
-        let payload_val_sorted = crate::sort_object_keys(payload_val.clone());
-
-        println!(
-            "payload_sorted_pretty: {}",
-            serde_json::to_string_pretty(&payload_val_sorted).unwrap()
-        );
-
-        println!(
-            "payload_sorted_ugly: {}",
-            serde_json::to_string(&payload_val_sorted).unwrap()
-        );
-
-        let bytes = serde_json::to_vec(&payload_val_sorted).unwrap();
-
-        let res = ledger.sign_secp256k1(path, vec![bytes]).await.unwrap();
-        println!("res: {:?}", res);
+        info!("public key: {:?}", res.public_key);
+        info!("addr: {:?}", res.addr);
     }
 
     #[tokio::test]
@@ -468,6 +328,7 @@ mod tests {
         let api = HidApi::new().unwrap();
         let device = TransportNativeHID::list_ledgers(&api).next().unwrap();
         let ledger = TransportNativeHID::open_device(&api, device).unwrap();
+        let app = CosmosApp::new(ledger);
         let derivation_path = [44, 118, 0, 0, 0];
 
         let fee = Fee {
@@ -483,12 +344,6 @@ mod tests {
         let memo = "hello".to_string();
         let sequence = 500;
 
-        // let msg = MsgStoreCode {
-        //     sender: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
-        //     wasm_byte_code: vec![3u8, 6u8],
-        //     instantiate_permission: None,
-        // };
-
         let msg = MsgExecuteContract {
             sender: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
             contract: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
@@ -496,22 +351,11 @@ mod tests {
             funds: vec![],
         };
 
-        let test_msg = json!({
-            "type": "/cosmwasm.wasm.v1.MsgStoreCode",
-            "value": "yo dawg",
-        });
-
-        let test2_msg = json!({
-            "type": "MsgExecuteContract",
-            "value": "Hiddkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdkdklskdlskjhkgsadjhfgasjhdfgjkahsgdfjhgdagsdfjkahgs",
-        });
-
         let any_json = msg.into_any_json();
-        // let value = serde_json::to_value(any_json).unwrap();
-        let value = test2_msg;
-        println!("value: {}", serde_json::to_string(&value).unwrap());
+        let value = serde_json::to_value(any_json).unwrap();
+        info!("value: {}", serde_json::to_string(&value).unwrap());
 
-        let res = ledger
+        let res = app
             .sign(
                 derivation_path,
                 fee,
@@ -523,6 +367,6 @@ mod tests {
             )
             .await
             .unwrap();
-        println!("res: {:?}", res);
+        info!("res: {:?}", res);
     }
 }

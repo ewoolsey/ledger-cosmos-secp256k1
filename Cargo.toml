@@ -12,19 +12,25 @@ keywords = ["ledger", "nano", "cosmos", "apdu", "bluetooth"]
 edition = "2021"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_with = "2"
 libc = "0.2"
 byteorder = "1.4"
 thiserror = "1.0"
 log = { version = "0.4", features = ["std"] }
 ledger-transport = "0.10"
-cosmrs = "0.9.0"
+ledger-zondax-generic = "0.10"
+# cosmrs = { version = "0.9.0", features = ["cosmwasm"] }
+k256 = "0.11.6"
+cosmrs = { git = "https://github.com/ewoolsey/cosmos-rust/", features = ["cosmwasm"] }
 
 [dev-dependencies]
 ledger-bluetooth = "0.2.0"
+ledger-transport-hid = "0.10.0"
 ledger-zondax-generic = "0.10"
 serial_test = "0.7.0"
 env_logger = "0.9"
 futures = "0.3"
 btleplug = "0.10"
 tokio = { version = "1", features = ["macros"] }
-

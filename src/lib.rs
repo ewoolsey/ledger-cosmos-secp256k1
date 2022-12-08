@@ -77,19 +77,37 @@ pub struct Secp256k1Response {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Fee {
+struct Fee {
     pub amount: Vec<Coin>,
     pub gas: String,
 }
 
+impl From<cosmrs::tx::Fee> for Fee {
+    fn from(value: cosmrs::tx::Fee) -> Self {
+        Self {
+            amount: value.amount.into_iter().map(|c| c.into()).collect(),
+            gas: value.gas_limit.to_string(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Coin {
+struct Coin {
     pub amount: String,
     pub denom: String,
 }
 
+impl From<cosmrs::Coin> for Coin {
+    fn from(value: cosmrs::Coin) -> Self {
+        Self {
+            amount: value.amount.to_string(),
+            denom: value.denom.to_string(),
+        }
+    }
+}
+
 #[derive(Serialize, Debug)]
-pub struct LedgerPayload {
+struct LedgerPayload {
     pub account_number: String,
     pub chain_id: String,
     pub fee: Fee,
@@ -187,9 +205,6 @@ where
         path: [u32; 5],
         message: Vec<u8>,
     ) -> Result<Signature, LedgerCosmosError<T::Error>> {
-        // if messages.is_empty() {
-        //     return Err(LedgerCosmosError::NoMessages);
-        // }
         let mut init_payload: Vec<u8> = Vec::new();
         init_payload
             .write_u32::<LittleEndian>(path[0] + 0x80000000)
@@ -233,7 +248,7 @@ where
     pub async fn sign(
         &self,
         derivation_path: [u32; 5],
-        fee: Fee,
+        fee: cosmrs::tx::Fee,
         chain_id: String,
         memo: String,
         account_number: u64,
@@ -243,7 +258,7 @@ where
         let payload = LedgerPayload {
             account_number: account_number.to_string(),
             chain_id,
-            fee,
+            fee: fee.into(),
             memo,
             msgs,
             sequence: sequence.to_string(),
@@ -292,14 +307,14 @@ mod tests {
 
     use btleplug::platform;
 
-    use cosmrs::{cosmwasm::MsgExecuteContract, AccountId};
+    use cosmrs::{cosmwasm::MsgExecuteContract, tx::Fee, AccountId, Coin, Denom};
     use ledger_bluetooth::TransportNativeBle;
     use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
 
     use log::info;
     use serial_test::serial;
 
-    use crate::{Coin, CosmosApp, Fee, IntoAnyJson};
+    use crate::{CosmosApp, IntoAnyJson};
 
     #[tokio::test]
     #[serial]
@@ -323,20 +338,23 @@ mod tests {
     }
 
     #[tokio::test]
-    // #[serial]
+    #[serial]
     async fn test_sign() {
         let api = HidApi::new().unwrap();
         let device = TransportNativeHID::list_ledgers(&api).next().unwrap();
         let ledger = TransportNativeHID::open_device(&api, device).unwrap();
+
         let app = CosmosApp::new(ledger);
         let derivation_path = [44, 118, 0, 0, 0];
 
         let fee = Fee {
             amount: vec![Coin {
-                denom: "uatom".into(),
-                amount: "45".into(),
+                denom: Denom::from_str("uatom").unwrap(),
+                amount: 45,
             }],
-            gas: "4000".to_string(),
+            gas_limit: 4000,
+            payer: None,
+            granter: None,
         };
 
         let account_number = 123;

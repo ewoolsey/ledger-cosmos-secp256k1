@@ -1,7 +1,7 @@
 [package]
 name = "ledger-cosmos-secp256k1"
 description = "An interface to allow easily interacting with the Ledger Cosmos app"
-version = "0.4.0"
+version = "0.5.0"
 license = "Apache-2.0"
 authors = ["Eric Woolsey <ewoolsey@ualberta.ca>"]
 homepage = "https://github.com/ewoolsey/ledger-cosmos-secp256k1"
@@ -27,8 +27,8 @@ cosmrs = { git = "https://github.com/ewoolsey/cosmos-rust/", version = "0.11", f
 ledger-bluetooth = "0.2.0"
 ledger-transport-hid = "0.10.0"
 ledger-zondax-generic = "0.10"
-serial_test = "0.7.0"
-env_logger = "0.9"
+serial_test = "0.9.0"
+env_logger = "0.10"
 futures = "0.3"
 btleplug = "0.10"
 tokio = { version = "1", features = ["macros"] }

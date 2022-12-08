@@ -7,7 +7,7 @@ use errors::LedgerCosmosError;
 
 use k256::ecdsa::Signature;
 use ledger_transport::{async_trait, APDUCommand, APDUErrorCode, Exchange};
-use ledger_zondax_generic::App;
+use ledger_zondax_generic::{App, AppExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -25,28 +25,21 @@ const GET_ADDR_SECP256K1_INS: u8 = 0x04;
 /// Instruction for signing a secp256k1 transaction.
 const SIGN_SECP256K1_INS: u8 = 0x02;
 
-pub struct CosmosApp {}
+pub struct CosmosApp<T>
+where
+    T: Exchange + Send + Sync,
+    T::Error: std::error::Error,
+{
+    transport: T,
+}
 
-impl App for CosmosApp {
+impl<T> App for CosmosApp<T>
+where
+    T: Exchange + Send + Sync,
+    T::Error: std::error::Error,
+{
     const CLA: u8 = COSMOS_CLA;
 }
-// pub trait LedgerMsg {
-//     fn type_url(&self) -> String;
-//     fn value(&self) -> Value;
-// }
-
-// impl<T> LedgerMsg for T
-// where
-//     T: Serialize + Msg,
-// {
-//     fn type_url(&self) -> String {
-//         self.to_any().unwrap().type_url
-//     }
-
-//     fn value(&self) -> Value {
-//         serde_json::to_value(self).unwrap()
-//     }
-// }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AnyJson {
@@ -138,7 +131,7 @@ pub trait CosmosAppTrait {
 #[async_trait]
 impl<T> CosmosAppTrait for T
 where
-    T: Exchange + Sync,
+    T: Exchange + Send + Sync,
 {
     type Error = T::Error;
     async fn get_cosmos_app_version(

@@ -307,14 +307,15 @@ mod tests {
 
     use btleplug::platform;
 
-    use cosmrs::{cosmwasm::MsgExecuteContract, tx::Fee, AccountId, Coin, Denom};
+    use cosmrs::{tx::Fee, Coin, Denom};
     use ledger_bluetooth::TransportNativeBle;
     use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
 
     use log::info;
+    use serde_json::json;
     use serial_test::serial;
 
-    use crate::{CosmosApp, IntoAnyJson};
+    use crate::CosmosApp;
 
     #[tokio::test]
     #[serial]
@@ -362,15 +363,20 @@ mod tests {
         let memo = "hello".to_string();
         let sequence = 500;
 
-        let msg = MsgExecuteContract {
-            sender: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
-            contract: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
-            msg: b"hello".to_vec(),
-            funds: vec![],
-        };
+        let msg = json!({
+            "hello": "world"
+        });
 
-        let any_json = msg.into_any_json();
-        let value = serde_json::to_value(any_json).unwrap();
+        // let msg = MsgExecuteContract {
+        //     sender: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
+        //     contract: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
+        //     msg: b"hello".to_vec(),
+        //     funds: vec![],
+        // };
+
+        // let any_json = msg.into_any_json();
+        // let value = serde_json::to_value(any_json).unwrap();
+        let value = msg;
         info!("value: {}", serde_json::to_string(&value).unwrap());
 
         let res = app

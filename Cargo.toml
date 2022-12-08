@@ -21,7 +21,7 @@ log = { version = "0.4", features = ["std"] }
 ledger-transport = "0.10"
 ledger-zondax-generic = "0.10"
 k256 = "0.11.6"
-cosmrs = { git = "https://github.com/ewoolsey/cosmos-rust/", features = ["cosmwasm"] }
+cosmrs = { git = "https://github.com/ewoolsey/cosmos-rust/", version = "0.11", features = ["cosmwasm"] }
 
 [dev-dependencies]
 ledger-bluetooth = "0.2.0"

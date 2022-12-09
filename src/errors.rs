@@ -1,33 +1,19 @@
-/*******************************************************************************
-*  Licensed under the Apache License, Version 2.0 (the "License");
-*  you may not use this file except in compliance with the License.
-*  You may obtain a copy of the License at
-*
-*      http://www.apache.org/licenses/LICENSE-2.0
-*
-*  Unless required by applicable law or agreed to in writing, software
-*  distributed under the License is distributed on an "AS IS" BASIS,
-*  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-*  See the License for the specific language governing permissions and
-*  limitations under the License.
-********************************************************************************/
 use thiserror::Error;
 
+const LEDGER_COSMOS_ERROR: &str = "Ledger Cosmos:";
+
 #[derive(Error, Debug)]
-pub enum LedgerCosmosError<E> {
-    /// Communication error
-    #[error("Ledger device: communication error `{0}`")]
+pub enum LedgerCosmosError {
+    #[error("{} communication error `{0}`", LEDGER_COSMOS_ERROR)]
     Comm(&'static str),
-    /// Communication error
-    #[error("Ledger device: apdu error `{0}`")]
+    #[error("{} apdu error `{0}`", LEDGER_COSMOS_ERROR)]
     Apdu(String),
-    /// Communication error
-    #[error("Ledger device: unknown apdu error. code `{0}`")]
+    #[error("{} unknown apdu error. code `{0}`", LEDGER_COSMOS_ERROR)]
     UnknownApduCode(u16),
-    /// Address error
-    #[error("Ledger device: could not deserialize address")]
+    #[error("{} could not deserialize address", LEDGER_COSMOS_ERROR)]
     InvalidAddress,
-    /// Error during apdu exchange
-    #[error("Ledger device: Exchange error `{0}`")]
-    Exchange(#[from] E),
+    #[error("{} Ledger Exchange error `{0}`", LEDGER_COSMOS_ERROR)]
+    Exchange(String),
+    #[error("{} Exchange error `{0}`", LEDGER_COSMOS_ERROR)]
+    Serde(#[from] serde_json::Error),
 }

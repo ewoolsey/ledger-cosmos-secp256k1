@@ -1,6 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 use byteorder::{LittleEndian, WriteBytesExt};
-use cosmrs::{tendermint::PublicKey, tx::Msg};
+use cosmrs::{
+    tendermint::PublicKey,
+    tx::{Fee, Msg},
+};
 use errors::LedgerCosmosError;
 
 use k256::ecdsa::Signature;
@@ -8,7 +11,7 @@ use ledger_transport::{APDUCommand, APDUErrorCode, Exchange};
 use ledger_zondax_generic::{App, AppExt};
 use log::info;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 pub mod errors;
 
@@ -23,6 +26,70 @@ const GET_ADDR_SECP256K1_INS: u8 = 0x04;
 
 /// Instruction for signing a secp256k1 transaction.
 const SIGN_SECP256K1_INS: u8 = 0x02;
+
+pub trait IntoValue: Msg + Serialize {
+    fn into_value(self) -> Value;
+}
+
+impl<T> IntoValue for T
+where
+    T: Msg + Serialize,
+{
+    fn into_value(self) -> Value {
+        let type_url = self.to_any().unwrap().type_url;
+        let value = serde_json::to_value(self).unwrap();
+        json!({
+            "type": type_url,
+            "value": sort_object_keys(value),
+        })
+    }
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CosmosAppVersion {
+    pub test_mode: u8,
+    pub major: u8,
+    pub minor: u8,
+    pub patch: u8,
+    pub locked: u8,
+}
+
+pub struct Secp256k1Response {
+    pub public_key: PublicKey,
+    pub addr: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LedgerSignDoc {
+    pub account_number: u64,
+    pub chain_id: String,
+    pub fee: Fee,
+    pub memo: String,
+    pub msgs: Vec<Value>,
+    pub sequence: u64,
+}
+
+impl LedgerSignDoc {
+    pub fn into_value(self) -> Value {
+        json!({
+            "account_number": self.account_number.to_string(),
+            "chain_id": self.chain_id,
+            "fee": {
+                "amount": self.fee.amount.into_iter().map(|c| json!({
+                    "amount": c.amount.to_string(),
+                    "denom": c.denom,
+                })).collect::<Vec<Value>>(),
+                "gas": self.fee.gas_limit.to_string(),
+            },
+            "memo": self.memo,
+            "msgs": self.msgs.into_iter().map(sort_object_keys).collect::<Vec<Value>>(),
+            "sequence": self.sequence.to_string(),
+        })
+    }
+    fn into_bytes(self) -> Result<Vec<u8>, LedgerCosmosError> {
+        let sorted = self.into_value();
+        Ok(serde_json::to_vec(&sorted)?)
+    }
+}
 
 pub struct CosmosApp<T>
 where
@@ -40,82 +107,6 @@ where
     const CLA: u8 = COSMOS_CLA;
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct AnyJson {
-    #[serde(rename = "type")]
-    pub type_url: String,
-    pub value: Value,
-}
-
-pub trait IntoAnyJson: Msg + Serialize {
-    fn into_any_json(self) -> AnyJson;
-}
-
-impl<T> IntoAnyJson for T
-where
-    T: Msg + Serialize,
-{
-    fn into_any_json(self) -> AnyJson {
-        let type_url = self.to_any().unwrap().type_url;
-        let value = serde_json::to_value(self).unwrap();
-        AnyJson { type_url, value }
-    }
-}
-
-#[derive(Debug)]
-pub struct CosmosAppVersion {
-    pub test_mode: u8,
-    pub major: u8,
-    pub minor: u8,
-    pub patch: u8,
-    pub locked: u8,
-}
-
-pub struct Secp256k1Response {
-    pub public_key: PublicKey,
-    pub addr: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Fee {
-    pub amount: Vec<Coin>,
-    pub gas: String,
-}
-
-impl From<cosmrs::tx::Fee> for Fee {
-    fn from(value: cosmrs::tx::Fee) -> Self {
-        Self {
-            amount: value.amount.into_iter().map(|c| c.into()).collect(),
-            gas: value.gas_limit.to_string(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Coin {
-    pub amount: String,
-    pub denom: String,
-}
-
-impl From<cosmrs::Coin> for Coin {
-    fn from(value: cosmrs::Coin) -> Self {
-        Self {
-            amount: value.amount.to_string(),
-            denom: value.denom.to_string(),
-        }
-    }
-}
-
-#[derive(Serialize, Debug)]
-struct LedgerPayload {
-    pub account_number: String,
-    pub chain_id: String,
-    pub fee: Fee,
-    pub memo: String,
-    pub msgs: Vec<Value>,
-    pub sequence: String,
-}
-
 impl<T> CosmosApp<T>
 where
     T: Exchange + Send + Sync,
@@ -125,9 +116,7 @@ where
         CosmosApp { transport }
     }
 
-    pub async fn get_cosmos_app_version(
-        &self,
-    ) -> Result<CosmosAppVersion, LedgerCosmosError<T::Error>> {
+    pub async fn get_cosmos_app_version(&self) -> Result<CosmosAppVersion, LedgerCosmosError> {
         let command = APDUCommand {
             cla: COSMOS_CLA,
             ins: GET_VERSION_INS,
@@ -135,8 +124,14 @@ where
             p2: 0x00,
             data: vec![],
         };
-        let answer = self.transport.exchange(&command).await?;
+        info!("Sending command: {:#?}", command);
+        let answer = self
+            .transport
+            .exchange(&command)
+            .await
+            .map_err(|e| LedgerCosmosError::Exchange(e.to_string()))?;
         let error_code = answer.error_code();
+        info!("code received: {:#?}", error_code);
         match error_code {
             Ok(code) => match code {
                 APDUErrorCode::NoError => {
@@ -160,7 +155,14 @@ where
         path: [u32; 5],
         hrp: &str,
         display_on_ledger: bool,
-    ) -> Result<Secp256k1Response, LedgerCosmosError<T::Error>> {
+    ) -> Result<Secp256k1Response, LedgerCosmosError> {
+        info!(
+            "Getting secp256k1 address
+            path: {:?}
+            hrp: {}
+            display_on_ledger: {:#?}",
+            path, hrp, display_on_ledger
+        );
         let mut get_addr_payload: Vec<u8> = Vec::new();
         get_addr_payload.write_u8(hrp.len() as u8).unwrap(); // hrp len
         get_addr_payload.extend(hrp.as_bytes()); // hrp
@@ -182,8 +184,14 @@ where
             p2: 0x00,
             data: get_addr_payload,
         };
-        let answer = self.transport.exchange(&command).await?;
+        info!("Sending apdu command: {:#?}", command);
+        let answer = self
+            .transport
+            .exchange(&command)
+            .await
+            .map_err(|e| LedgerCosmosError::Exchange(e.to_string()))?;
         let error_code = answer.error_code();
+        info!("code received: {:#?}", error_code);
         match error_code {
             Ok(code) => match code {
                 APDUErrorCode::NoError => {
@@ -204,7 +212,7 @@ where
         &self,
         path: [u32; 5],
         message: Vec<u8>,
-    ) -> Result<Signature, LedgerCosmosError<T::Error>> {
+    ) -> Result<Signature, LedgerCosmosError> {
         let mut init_payload: Vec<u8> = Vec::new();
         init_payload
             .write_u32::<LittleEndian>(path[0] + 0x80000000)
@@ -248,36 +256,23 @@ where
     pub async fn sign(
         &self,
         derivation_path: [u32; 5],
-        fee: cosmrs::tx::Fee,
-        chain_id: String,
-        memo: String,
-        account_number: u64,
-        sequence: u64,
-        msgs: Vec<Value>,
-    ) -> Result<Signature, LedgerCosmosError<T::Error>> {
-        let payload = LedgerPayload {
-            account_number: account_number.to_string(),
-            chain_id,
-            fee: fee.into(),
-            memo,
-            msgs,
-            sequence: sequence.to_string(),
-        };
-
-        let payload_val = serde_json::to_value(&payload).unwrap();
-        let payload_val_sorted = crate::sort_object_keys(payload_val.clone());
-        let bytes = serde_json::to_vec(&payload_val_sorted).unwrap();
+        ledger_sign_doc: LedgerSignDoc,
+    ) -> Result<Signature, LedgerCosmosError> {
         info!(
-            "payload: {}",
-            serde_json::to_string_pretty(&payload_val_sorted).unwrap()
+            "Signing secp256k1
+            derivation_path: {:?}
+            ledger_sign_doc: {:#?}",
+            derivation_path, ledger_sign_doc
         );
-        let res = self.sign_secp256k1(derivation_path, bytes).await?;
+        let res = self
+            .sign_secp256k1(derivation_path, ledger_sign_doc.into_bytes()?)
+            .await?;
         info!("res: {:?}", res);
         Ok(res)
     }
 }
 
-fn decompress_pk(compressed_pk: &[u8]) -> Result<PublicKey, LedgerCosmosError<()>> {
+fn decompress_pk(compressed_pk: &[u8]) -> Result<PublicKey, LedgerCosmosError> {
     Ok(PublicKey::from_raw_secp256k1(compressed_pk).expect("invalid secp256k1 key"))
 }
 
@@ -304,6 +299,7 @@ fn sort_object_keys(value: Value) -> Value {
 mod tests {
 
     use std::str::FromStr;
+    use test_log::test;
 
     use btleplug::platform;
 
@@ -315,9 +311,9 @@ mod tests {
     use serde_json::json;
     use serial_test::serial;
 
-    use crate::CosmosApp;
+    use crate::{CosmosApp, LedgerSignDoc};
 
-    #[tokio::test]
+    #[test(tokio::test)]
     #[serial]
     async fn test_get_addr_secp256k1() {
         let manager = platform::Manager::new().await.unwrap();
@@ -338,7 +334,7 @@ mod tests {
         info!("addr: {:?}", res.addr);
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     #[serial]
     async fn test_sign() {
         let api = HidApi::new().unwrap();
@@ -363,7 +359,7 @@ mod tests {
         let memo = "hello".to_string();
         let sequence = 500;
 
-        let msg = json!({
+        let value = json!({
             "hello": "world"
         });
 
@@ -374,23 +370,19 @@ mod tests {
         //     funds: vec![],
         // };
 
-        // let any_json = msg.into_any_json();
-        // let value = serde_json::to_value(any_json).unwrap();
-        let value = msg;
+        // let value = msg.into_value();
         info!("value: {}", serde_json::to_string(&value).unwrap());
 
-        let res = app
-            .sign(
-                derivation_path,
-                fee,
-                chain_id,
-                memo,
-                account_number,
-                sequence,
-                vec![value],
-            )
-            .await
-            .unwrap();
+        let sign_doc = LedgerSignDoc {
+            account_number,
+            chain_id,
+            fee,
+            memo,
+            msgs: vec![value],
+            sequence,
+        };
+
+        let res = app.sign(derivation_path, sign_doc).await.unwrap();
         info!("res: {:?}", res);
     }
 }

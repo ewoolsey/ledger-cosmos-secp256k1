@@ -21,7 +21,9 @@ log = { version = "0.4", features = ["std"] }
 ledger-transport = "0.10"
 ledger-zondax-generic = "0.10"
 k256 = "0.11.6"
-cosmrs = { version = "0.11", features = ["cosmwasm"] }
+cosmrs = { version = "0.11", features = ["cosmwasm", "dev"] }
+stdtx = "0.7"
+subtle-encoding = { version = "0.5", features = ["bech32-preview"] }
 
 [dev-dependencies]
 test-log = "0.2.8"
@@ -29,7 +31,7 @@ env_logger = "0.10.0"
 ledger-bluetooth = "0.2.0"
 ledger-transport-hid = "0.10.0"
 ledger-zondax-generic = "0.10"
-serial_test = "0.9.0"
+serial_test = "0.10.0"
 futures = "0.3"
 btleplug = "0.10"
 tokio = { version = "1", features = ["macros"] }

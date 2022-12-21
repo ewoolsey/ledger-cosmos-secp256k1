@@ -4,7 +4,7 @@ use cosmrs::{
     tendermint::PublicKey,
     tx::{Fee, Msg},
 };
-use errors::LedgerCosmosError;
+use error::LedgerCosmosError;
 
 use k256::ecdsa::Signature;
 use ledger_transport::{APDUCommand, APDUErrorCode, Exchange};
@@ -13,7 +13,11 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-pub mod errors;
+pub mod error;
+pub mod jsonrpc;
+pub mod sign_msg;
+pub mod tx_request;
+pub mod tx_signer;
 
 /// CLA for the cosmos app.
 const COSMOS_CLA: u8 = 0x55;

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-const LEDGER_COSMOS_ERROR: &str = "Ledger Cosmos:";
+const LEDGER_COSMOS_ERROR: &str = "Ledger Cosmos Error:";
 
 #[derive(Error, Debug)]
 pub enum LedgerCosmosError {
@@ -14,6 +14,6 @@ pub enum LedgerCosmosError {
     InvalidAddress,
     #[error("{} Ledger Exchange error `{0}`", LEDGER_COSMOS_ERROR)]
     Exchange(String),
-    #[error("{} Exchange error `{0}`", LEDGER_COSMOS_ERROR)]
+    #[error("{} serde_json error `{0}`", LEDGER_COSMOS_ERROR)]
     Serde(#[from] serde_json::Error),
 }

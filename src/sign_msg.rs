@@ -8,7 +8,7 @@ use stdtx::amino;
 
 /// String representation of a message that describes a particular transaction
 /// to be signed by transaction signer
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SignMsg {
     /// Fee
     pub fee: amino::StdFee,

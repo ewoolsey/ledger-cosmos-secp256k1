@@ -329,94 +329,154 @@ fn sort_object_keys(value: Value) -> Value {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
+#[cfg(test)]
+mod tests {
 
-//     use std::str::FromStr;
-//     use test_log::test;
+    use std::str::FromStr;
+    use stdtx::amino::{self, types::Coin};
+    use test_log::test;
 
-//     use btleplug::platform;
+    use cosmrs::Denom;
 
-//     use cosmrs::{tx::Fee, Coin, Denom};
-//     use ledger_bluetooth::TransportNativeBle;
-//     use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
+    use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
 
-//     use log::info;
-//     use serde_json::json;
-//     use serial_test::serial;
+    use log::info;
+    use serde_json::json;
+    use serial_test::serial;
 
-//     use crate::{CosmosApp, LedgerSignDoc};
+    use crate::{sign_msg::SignMsg, tx_request::TxSigningRequest, CosmosApp};
 
-//     #[test(tokio::test)]
-//     #[serial]
-//     async fn test_get_addr_secp256k1() {
-//         let manager = platform::Manager::new().await.unwrap();
-//         let ledger = TransportNativeBle::new(&manager)
-//             .await
-//             .unwrap()
-//             .pop()
-//             .unwrap();
-//         let app = CosmosApp::new(ledger);
-//         let path = [44, 118, 0, 0, 0];
-//         let hrp = "cosmos";
-//         let display_on_ledger = true;
-//         let res = app
-//             .get_addr_secp256k1(path, hrp, display_on_ledger)
-//             .await
-//             .unwrap();
-//         info!("public key: {:?}", res.public_key);
-//         info!("addr: {:?}", res.addr);
-//     }
+    // #[test(tokio::test)]
+    // #[serial]
+    // async fn test_get_addr_secp256k1() {
+    //     let manager = platform::Manager::new().await.unwrap();
+    //     let ledger = TransportNativeBle::new(&manager)
+    //         .await
+    //         .unwrap()
+    //         .pop()
+    //         .unwrap();
+    //     let app = CosmosApp::new(ledger);
+    //     let path = [44, 118, 0, 0, 0];
+    //     let hrp = "cosmos";
+    //     let display_on_ledger = true;
+    //     let res = app
+    //         .get_addr_secp256k1(path, hrp, display_on_ledger)
+    //         .await
+    //         .unwrap();
+    //     info!("public key: {:?}", res.public_key);
+    //     info!("addr: {:?}", res.addr);
+    // }
 
-//     #[test(tokio::test)]
-//     #[serial]
-//     async fn test_sign() {
-//         let api = HidApi::new().unwrap();
-//         let device = TransportNativeHID::list_ledgers(&api).next().unwrap();
-//         let ledger = TransportNativeHID::open_device(&api, device).unwrap();
+    #[test(tokio::test)]
+    #[serial]
+    async fn test_sign() {
+        let api = HidApi::new().unwrap();
+        let device = TransportNativeHID::list_ledgers(&api).next().unwrap();
+        let ledger = TransportNativeHID::open_device(&api, device).unwrap();
 
-//         let app = CosmosApp::new(ledger);
-//         let derivation_path = [44, 118, 0, 0, 0];
+        let app = CosmosApp::new(ledger);
+        let derivation_path = [44, 118, 0, 0, 0];
 
-//         let fee = Fee {
-//             amount: vec![Coin {
-//                 denom: Denom::from_str("uatom").unwrap(),
-//                 amount: 45,
-//             }],
-//             gas_limit: 4000,
-//             payer: None,
-//             granter: None,
-//         };
+        let fee = amino::StdFee {
+            amount: vec![Coin {
+                denom: "uatom".into(),
+                amount: "45".into(),
+            }],
+            gas: 4000,
+        };
 
-//         let account_number = 123;
-//         let chain_id = "oasis-1".to_string();
-//         let memo = "hello".to_string();
-//         let sequence = 500;
+        let account_number = 123;
+        let chain_id = "oasis-1".to_string();
+        let memo = "hello".to_string();
+        let sequence = 500;
 
-//         let value = json!({
-//             "hello": "world"
-//         });
+        let value = json!({
+            "hello": "world"
+        });
 
-//         // let msg = MsgExecuteContract {
-//         //     sender: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
-//         //     contract: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
-//         //     msg: b"hello".to_vec(),
-//         //     funds: vec![],
-//         // };
+        // let msg = MsgExecuteContract {
+        //     sender: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
+        //     contract: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
+        //     msg: b"hello".to_vec(),
+        //     funds: vec![],
+        // };
 
-//         // let value = msg.into_value();
-//         info!("value: {}", serde_json::to_string(&value).unwrap());
+        // let value = msg.into_value();
+        info!("value: {}", serde_json::to_string(&value).unwrap());
 
-//         let sign_doc = LedgerSignDoc {
-//             account_number,
-//             chain_id,
-//             fee,
-//             memo,
-//             msgs: vec![value],
-//             sequence,
-//         };
+        pub const TERRA_SCHEMA: &str = r#"
+            namespace = "core/StdTx"
+            acc_prefix = "terra"
+            val_prefix = "terravaloper"
 
-//         let res = app.sign(derivation_path, sign_doc).await.unwrap();
-//         info!("res: {:?}", res);
-//     }
-// }
+            [[definition]]
+            type_name = "oracle/MsgExchangeRatePrevote"
+            fields = [
+                { name = "hash",  type = "string" },
+                { name = "denom", type = "string" },
+                { name = "feeder", type = "sdk.AccAddress" },
+                { name = "validator", type = "sdk.ValAddress" },
+            ]
+
+            [[definition]]
+            type_name = "oracle/MsgExchangeRateVote"
+            fields = [
+                { name = "exchange_rate", type = "sdk.Dec"},
+                { name = "salt", type = "string" },
+                { name = "denom", type = "string" },
+                { name = "feeder", type = "sdk.AccAddress" },
+                { name = "validator", type = "sdk.ValAddress" },
+            ]
+
+            [[definition]]
+            type_name = "oracle/MsgType"
+            fields = [
+                { name = "denom", type = "string" },
+                { name = "salt", type = "string" },
+            ]
+        "#;
+
+        let msg = json!({
+            "type": "oracle/MsgType",
+            "value": {
+                "denom": "denom",
+                "salt": "hash",
+            }
+        });
+
+        let schema = amino::Schema::from_str(TERRA_SCHEMA).unwrap();
+
+        dbg!(schema.clone());
+
+        let tx_builder = amino::Builder::new(schema, chain_id.clone(), account_number);
+
+        let signing_request = TxSigningRequest {
+            /// Requested chain ID
+            chain_id,
+
+            /// Fee
+            fee,
+
+            /// Memo
+            memo,
+
+            /// Transaction messages to be signed
+            msgs: vec![msg],
+        };
+
+        let sign_msg = SignMsg::new(&signing_request, &tx_builder, sequence).unwrap();
+
+        // let sign_doc = LedgerSignDoc {
+        //     account_number,
+        //     chain_id,
+        //     fee,
+        //     memo,
+        //     msgs: vec![value],
+        //     sequence,
+        // };
+
+        dbg!(sign_msg.clone());
+        let res = app.sign(derivation_path, sign_msg).await.unwrap();
+        info!("res: {:?}", res);
+    }
+}

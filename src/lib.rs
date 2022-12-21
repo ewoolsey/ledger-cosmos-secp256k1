@@ -12,9 +12,11 @@ use ledger_zondax_generic::{App, AppExt};
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sign_msg::SignMsg;
+use stdtx::amino;
 
 pub mod error;
-pub mod jsonrpc;
+// pub mod jsonrpc;
 pub mod sign_msg;
 pub mod tx_request;
 pub mod tx_signer;
@@ -62,38 +64,38 @@ pub struct Secp256k1Response {
     pub addr: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LedgerSignDoc {
-    pub account_number: u64,
-    pub chain_id: String,
-    pub fee: Fee,
-    pub memo: String,
-    pub msgs: Vec<Value>,
-    pub sequence: u64,
-}
+// #[derive(Debug, Serialize, Deserialize)]
+// pub struct LedgerSignDoc {
+//     pub account_number: u64,
+//     pub chain_id: String,
+//     pub fee: Fee,
+//     pub memo: String,
+//     pub msgs: Vec<Value>,
+//     pub sequence: u64,
+// }
 
-impl LedgerSignDoc {
-    pub fn into_value(self) -> Value {
-        json!({
-            "account_number": self.account_number.to_string(),
-            "chain_id": self.chain_id,
-            "fee": {
-                "amount": self.fee.amount.into_iter().map(|c| json!({
-                    "amount": c.amount.to_string(),
-                    "denom": c.denom,
-                })).collect::<Vec<Value>>(),
-                "gas": self.fee.gas_limit.to_string(),
-            },
-            "memo": self.memo,
-            "msgs": self.msgs.into_iter().map(sort_object_keys).collect::<Vec<Value>>(),
-            "sequence": self.sequence.to_string(),
-        })
-    }
-    fn into_bytes(self) -> Result<Vec<u8>, LedgerCosmosError> {
-        let sorted = self.into_value();
-        Ok(serde_json::to_vec(&sorted)?)
-    }
-}
+// impl LedgerSignDoc {
+//     pub fn into_value(self) -> Value {
+//         json!({
+//             "account_number": self.account_number.to_string(),
+//             "chain_id": self.chain_id,
+//             "fee": {
+//                 "amount": self.fee.amount.into_iter().map(|c| json!({
+//                     "amount": c.amount.to_string(),
+//                     "denom": c.denom,
+//                 })).collect::<Vec<Value>>(),
+//                 "gas": self.fee.gas_limit.to_string(),
+//             },
+//             "memo": self.memo,
+//             "msgs": self.msgs.into_iter().map(sort_object_keys).collect::<Vec<Value>>(),
+//             "sequence": self.sequence.to_string(),
+//         })
+//     }
+//     fn into_bytes(self) -> Result<Vec<u8>, LedgerCosmosError> {
+//         let sorted = self.into_value();
+//         Ok(serde_json::to_vec(&sorted)?)
+//     }
+// }
 
 pub struct CosmosApp<T>
 where
@@ -215,7 +217,7 @@ where
     pub async fn sign_secp256k1(
         &self,
         path: [u32; 5],
-        message: Vec<u8>,
+        message: &[u8],
     ) -> Result<Signature, LedgerCosmosError> {
         let mut init_payload: Vec<u8> = Vec::new();
         init_payload
@@ -260,19 +262,47 @@ where
     pub async fn sign(
         &self,
         derivation_path: [u32; 5],
-        ledger_sign_doc: LedgerSignDoc,
-    ) -> Result<Signature, LedgerCosmosError> {
+        sign_msg: SignMsg,
+    ) -> Result<amino::StdTx, LedgerCosmosError> {
         info!(
             "Signing secp256k1
             derivation_path: {:?}
             ledger_sign_doc: {:#?}",
-            derivation_path, ledger_sign_doc
+            derivation_path, sign_msg
         );
         let res = self
-            .sign_secp256k1(derivation_path, ledger_sign_doc.into_bytes()?)
+            .sign_secp256k1(derivation_path, sign_msg.sign_bytes())
             .await?;
         info!("res: {:?}", res);
-        Ok(res)
+        let mut signature = amino::StdSignature::from(res);
+
+        signature.pub_key = self
+            .get_addr_secp256k1(derivation_path, "cosmos", false)
+            .await?
+            .public_key
+            .to_bytes();
+
+        let msg_type_info = sign_msg
+            .msg_types()
+            .iter()
+            .map(|ty| ty.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        // let address = self
+        //     .address
+        //     .to_bech32(self.tx_builder.schema().acc_prefix());
+
+        // info!(
+        //     "[{}] signed TX {} for {} ({} msgs total; types: {})",
+        //     self.chain_id,
+        //     self.seq_file.sequence(),
+        //     address,
+        //     sign_msg.msgs().len(),
+        //     msg_type_info,
+        // );
+
+        Ok(sign_msg.to_stdtx(signature))
     }
 }
 
@@ -299,94 +329,94 @@ fn sort_object_keys(value: Value) -> Value {
     }
 }
 
-#[cfg(test)]
-mod tests {
+// #[cfg(test)]
+// mod tests {
 
-    use std::str::FromStr;
-    use test_log::test;
+//     use std::str::FromStr;
+//     use test_log::test;
 
-    use btleplug::platform;
+//     use btleplug::platform;
 
-    use cosmrs::{tx::Fee, Coin, Denom};
-    use ledger_bluetooth::TransportNativeBle;
-    use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
+//     use cosmrs::{tx::Fee, Coin, Denom};
+//     use ledger_bluetooth::TransportNativeBle;
+//     use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
 
-    use log::info;
-    use serde_json::json;
-    use serial_test::serial;
+//     use log::info;
+//     use serde_json::json;
+//     use serial_test::serial;
 
-    use crate::{CosmosApp, LedgerSignDoc};
+//     use crate::{CosmosApp, LedgerSignDoc};
 
-    #[test(tokio::test)]
-    #[serial]
-    async fn test_get_addr_secp256k1() {
-        let manager = platform::Manager::new().await.unwrap();
-        let ledger = TransportNativeBle::new(&manager)
-            .await
-            .unwrap()
-            .pop()
-            .unwrap();
-        let app = CosmosApp::new(ledger);
-        let path = [44, 118, 0, 0, 0];
-        let hrp = "cosmos";
-        let display_on_ledger = true;
-        let res = app
-            .get_addr_secp256k1(path, hrp, display_on_ledger)
-            .await
-            .unwrap();
-        info!("public key: {:?}", res.public_key);
-        info!("addr: {:?}", res.addr);
-    }
+//     #[test(tokio::test)]
+//     #[serial]
+//     async fn test_get_addr_secp256k1() {
+//         let manager = platform::Manager::new().await.unwrap();
+//         let ledger = TransportNativeBle::new(&manager)
+//             .await
+//             .unwrap()
+//             .pop()
+//             .unwrap();
+//         let app = CosmosApp::new(ledger);
+//         let path = [44, 118, 0, 0, 0];
+//         let hrp = "cosmos";
+//         let display_on_ledger = true;
+//         let res = app
+//             .get_addr_secp256k1(path, hrp, display_on_ledger)
+//             .await
+//             .unwrap();
+//         info!("public key: {:?}", res.public_key);
+//         info!("addr: {:?}", res.addr);
+//     }
 
-    #[test(tokio::test)]
-    #[serial]
-    async fn test_sign() {
-        let api = HidApi::new().unwrap();
-        let device = TransportNativeHID::list_ledgers(&api).next().unwrap();
-        let ledger = TransportNativeHID::open_device(&api, device).unwrap();
+//     #[test(tokio::test)]
+//     #[serial]
+//     async fn test_sign() {
+//         let api = HidApi::new().unwrap();
+//         let device = TransportNativeHID::list_ledgers(&api).next().unwrap();
+//         let ledger = TransportNativeHID::open_device(&api, device).unwrap();
 
-        let app = CosmosApp::new(ledger);
-        let derivation_path = [44, 118, 0, 0, 0];
+//         let app = CosmosApp::new(ledger);
+//         let derivation_path = [44, 118, 0, 0, 0];
 
-        let fee = Fee {
-            amount: vec![Coin {
-                denom: Denom::from_str("uatom").unwrap(),
-                amount: 45,
-            }],
-            gas_limit: 4000,
-            payer: None,
-            granter: None,
-        };
+//         let fee = Fee {
+//             amount: vec![Coin {
+//                 denom: Denom::from_str("uatom").unwrap(),
+//                 amount: 45,
+//             }],
+//             gas_limit: 4000,
+//             payer: None,
+//             granter: None,
+//         };
 
-        let account_number = 123;
-        let chain_id = "oasis-1".to_string();
-        let memo = "hello".to_string();
-        let sequence = 500;
+//         let account_number = 123;
+//         let chain_id = "oasis-1".to_string();
+//         let memo = "hello".to_string();
+//         let sequence = 500;
 
-        let value = json!({
-            "hello": "world"
-        });
+//         let value = json!({
+//             "hello": "world"
+//         });
 
-        // let msg = MsgExecuteContract {
-        //     sender: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
-        //     contract: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
-        //     msg: b"hello".to_vec(),
-        //     funds: vec![],
-        // };
+//         // let msg = MsgExecuteContract {
+//         //     sender: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
+//         //     contract: AccountId::from_str("noria19n42dwl6mgwcep5ytqt7qpthy067ssq72gjsrk").unwrap(),
+//         //     msg: b"hello".to_vec(),
+//         //     funds: vec![],
+//         // };
 
-        // let value = msg.into_value();
-        info!("value: {}", serde_json::to_string(&value).unwrap());
+//         // let value = msg.into_value();
+//         info!("value: {}", serde_json::to_string(&value).unwrap());
 
-        let sign_doc = LedgerSignDoc {
-            account_number,
-            chain_id,
-            fee,
-            memo,
-            msgs: vec![value],
-            sequence,
-        };
+//         let sign_doc = LedgerSignDoc {
+//             account_number,
+//             chain_id,
+//             fee,
+//             memo,
+//             msgs: vec![value],
+//             sequence,
+//         };
 
-        let res = app.sign(derivation_path, sign_doc).await.unwrap();
-        info!("res: {:?}", res);
-    }
-}
+//         let res = app.sign(derivation_path, sign_doc).await.unwrap();
+//         info!("res: {:?}", res);
+//     }
+// }
